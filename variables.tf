@@ -175,3 +175,9 @@ variable "platform_secrets" {
   type        = "list"
   default     = []
 }
+
+variable "enable_cloudwatch_logs" {
+  description = "Enabled ECS log shipping to cloudwatch using awslogs"
+  type        = "string"
+  default     = "false"
+}

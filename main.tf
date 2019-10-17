@@ -37,29 +37,25 @@ module "taskdef" {
 }
 
 module "service_container_definition" {
-  source = "github.com/mergermarket/tf_ecs_container_definition"
+  source = "github.com/fewstera/tf_ecs_container_definition"
 
-  name                = "${lookup(var.release, "component")}${var.name_suffix}"
-  image               = "${lookup(var.release, "image_id")}"
-  cpu                 = "${var.cpu}"
-  memory              = "${var.memory}"
-  container_port      = "${var.port}"
-  nofile_soft_ulimit  = "${var.nofile_soft_ulimit}"
-  mountpoint          = "${var.container_mountpoint}"
-  port_mappings       = "${var.container_port_mappings}"
-  application_secrets = "${var.application_secrets}"
-  platform_secrets    = "${var.platform_secrets}"
+  name                   = "${lookup(var.release, "component")}${var.name_suffix}"
+  image                  = "${lookup(var.release, "image_id")}"
+  cpu                    = "${var.cpu}"
+  memory                 = "${var.memory}"
+  container_port         = "${var.port}"
+  nofile_soft_ulimit     = "${var.nofile_soft_ulimit}"
+  mountpoint             = "${var.container_mountpoint}"
+  port_mappings          = "${var.container_port_mappings}"
+  application_secrets    = "${var.application_secrets}"
+  platform_secrets       = "${var.platform_secrets}"
+  enable_cloudwatch_logs = "${var.enable_cloudwatch_logs}"
 
   container_env = "${merge(
     map(
-      "LOGSPOUT_CLOUDWATCHLOGS_LOG_GROUP_STDOUT", "${local.service_name}${var.name_suffix}-stdout",
-      "LOGSPOUT_CLOUDWATCHLOGS_LOG_GROUP_STDERR", "${local.service_name}${var.name_suffix}-stderr",
-      "STATSD_HOST", "172.17.42.1",
-      "STATSD_PORT", "8125",
-      "STATSD_ENABLED", "true",
       "ENV_NAME", "${var.env}",
-      "COMPONENT_NAME",  "${lookup(var.release, "component")}",
-      "VERSION",  "${lookup(var.release, "version")}"
+      "COMPONENT_NAME", "${lookup(var.release, "component")}",
+      "VERSION", "${lookup(var.release, "version")}"
     ),
     var.common_application_environment,
     var.application_environment,
@@ -71,36 +67,21 @@ module "service_container_definition" {
     "env", var.env,
     "team", var.release["team"],
     "version", var.release["version"],
-    "logentries.token", var.logentries_token
   ), var.container_labels)}"
 }
 
-resource "aws_cloudwatch_log_group" "stdout" {
-  name              = "${local.service_name}${var.name_suffix}-stdout"
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+  name              = "/ecs/${local.service_name}"
   retention_in_days = "7"
 }
 
-resource "aws_cloudwatch_log_group" "stderr" {
-  name              = "${local.service_name}${var.name_suffix}-stderr"
-  retention_in_days = "7"
-}
-
-resource "aws_cloudwatch_log_subscription_filter" "kinesis_log_stdout_stream" {
+resource "aws_cloudwatch_log_subscription_filter" "kinesis_log_ecs_logs_stream" {
   count           = "${var.platform_config["datadog_log_subscription_arn"] != "" ? 1 : 0}"
-  name            = "kinesis-log-stdout-stream-${local.service_name}"
+  name            = "kinesis-log-ecs-stream-${local.service_name}"
   destination_arn = "${var.platform_config["datadog_log_subscription_arn"]}"
-  log_group_name  = "${local.service_name}${var.name_suffix}-stdout"
+  log_group_name  = "/ecs/${local.service_name}"
   filter_pattern  = ""
-  depends_on      = ["aws_cloudwatch_log_group.stdout"]
-}
-
-resource "aws_cloudwatch_log_subscription_filter" "kinesis_log_stderr_stream" {
-  count           = "${var.platform_config["datadog_log_subscription_arn"] != "" ? 1 : 0}"
-  name            = "kinesis-log-stdout-stream-${local.service_name}"
-  destination_arn = "${var.platform_config["datadog_log_subscription_arn"]}"
-  log_group_name  = "${local.service_name}${var.name_suffix}-stderr"
-  filter_pattern  = ""
-  depends_on      = ["aws_cloudwatch_log_group.stderr"]
+  depends_on      = ["aws_cloudwatch_log_group.ecs_logs"]
 }
 
 resource "aws_appautoscaling_target" "ecs" {
@@ -118,7 +99,7 @@ resource "aws_appautoscaling_scheduled_action" "scale_down" {
   service_namespace  = "${aws_appautoscaling_target.ecs.service_namespace}"
   resource_id        = "${aws_appautoscaling_target.ecs.resource_id}"
   scalable_dimension = "${aws_appautoscaling_target.ecs.scalable_dimension}"
-  schedule           = "cron(*/30 ${var.overnight_scaledown_start_hour}-${(var.overnight_scaledown_end_hour)-1} ? * * *)"
+  schedule           = "cron(*/30 ${var.overnight_scaledown_start_hour}-${(var.overnight_scaledown_end_hour) - 1} ? * * *)"
 
   scalable_target_action {
     min_capacity = "${var.overnight_scaledown_min_count}"
